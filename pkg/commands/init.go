@@ -70,8 +70,8 @@ func NewInitCommand(c types.Args, ioStreams cmdutil.IOStreams) *cobra.Command {
 			if err = o.Traits(); err != nil {
 				return err
 			}
-			comps, appconfig, scopes, err := o.app.OAM(o.Env, ioStreams, true)
-			if err != nil {
+
+			if err := o.app.Validate(); err != nil {
 				return err
 			}
 
@@ -90,19 +90,7 @@ func NewInitCommand(c types.Args, ioStreams cmdutil.IOStreams) *cobra.Command {
 			}
 
 			ctx := context.Background()
-			err = o.app.Run(ctx, o.client, appconfig, comps, scopes)
-			if err != nil {
-				return err
-			}
-			deployStatus, err := printTrackingDeployStatus(ctx, o.client, o.IOStreams, o.workloadName, o.appName, o.Env)
-			if err != nil {
-				return err
-			}
-			if deployStatus != compStatusDeployed {
-				return nil
-			}
-
-			return printComponentStatus(context.Background(), o.client, o.IOStreams, o.workloadName, o.appName, o.Env)
+			return o.app.BuildRun(ctx, o.client, o.Env, ioStreams)
 		},
 		Annotations: map[string]string{
 			types.TagCommandType: types.TypeStart,

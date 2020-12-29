@@ -8,82 +8,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/oam-dev/kubevela/apis/core.oam.dev/v1alpha2"
-
-	"github.com/oam-dev/kubevela/pkg/oam"
-
 	"github.com/oam-dev/kubevela/apis/types"
 	cmdutil "github.com/oam-dev/kubevela/pkg/commands/util"
 )
 
 // BuildRun will build OAM and deploy from Appfile
 func (app *Application) BuildRun(ctx context.Context, client client.Client, env *types.EnvMeta, io cmdutil.IOStreams) error {
-	components, appconfig, scopes, err := app.OAM(env, io, true)
+	newApp, err := app.InitTasks(io)
 	if err != nil {
 		return err
 	}
-	return app.Run(ctx, client, appconfig, components, scopes)
-}
-
-// Run will deploy OAM objects.
-func (app *Application) Run(ctx context.Context, client client.Client,
-	ac *v1alpha2.ApplicationConfiguration, comps []*v1alpha2.Component, scopes []oam.Object) error {
-	for _, comp := range comps {
-		if err := CreateOrUpdateComponent(ctx, client, comp); err != nil {
-			return err
-		}
-	}
-	if err := CreateScopes(ctx, client, scopes); err != nil {
+	servApp := newApp.Object(env.Namespace)
+	existApp := new(v1alpha2.Application)
+	if err := client.Get(ctx, ctypes.NamespacedName{Name: servApp.Name, Namespace: servApp.Namespace}, existApp); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	return CreateOrUpdateAppConfig(ctx, client, ac)
-}
+	servApp.ResourceVersion = existApp.ResourceVersion
+	if servApp.ResourceVersion == "" {
+		return client.Create(ctx, servApp)
+	}
+	return client.Update(ctx, servApp)
 
-// CreateOrUpdateComponent will create if not exist and update if exists.
-func CreateOrUpdateComponent(ctx context.Context, client client.Client, comp *v1alpha2.Component) error {
-	var getc v1alpha2.Component
-	key := ctypes.NamespacedName{Name: comp.Name, Namespace: comp.Namespace}
-	if err := client.Get(ctx, key, &getc); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-		return client.Create(ctx, comp)
-	}
-	comp.ResourceVersion = getc.ResourceVersion
-	return client.Update(ctx, comp)
-}
-
-// CreateOrUpdateAppConfig will create if not exist and update if exists.
-func CreateOrUpdateAppConfig(ctx context.Context, client client.Client, appConfig *v1alpha2.ApplicationConfiguration) error {
-	var geta v1alpha2.ApplicationConfiguration
-	key := ctypes.NamespacedName{Name: appConfig.Name, Namespace: appConfig.Namespace}
-	var exist = true
-	if err := client.Get(ctx, key, &geta); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-		exist = false
-	}
-	if !exist {
-		return client.Create(ctx, appConfig)
-	}
-	appConfig.ResourceVersion = geta.ResourceVersion
-	return client.Update(ctx, appConfig)
-}
-
-// CreateScopes will create all scopes
-func CreateScopes(ctx context.Context, client client.Client, scopes []oam.Object) error {
-	for _, obj := range scopes {
-		key := ctypes.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}
-		err := client.Get(ctx, key, obj)
-		if err == nil {
-			return nil
-		}
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-		if err = client.Create(ctx, obj); err != nil {
-			return err
-		}
-	}
-	return nil
 }

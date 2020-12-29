@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/oam-dev/kubevela/apis/core.oam.dev/v1alpha2"
 	"github.com/oam-dev/kubevela/apis/types"
 	"github.com/oam-dev/kubevela/pkg/appfile"
 	"github.com/oam-dev/kubevela/pkg/appfile/template"
+	"github.com/oam-dev/kubevela/pkg/builtin"
 	cmdutil "github.com/oam-dev/kubevela/pkg/commands/util"
 	"github.com/oam-dev/kubevela/pkg/oam"
 	"github.com/oam-dev/kubevela/pkg/utils/env"
@@ -283,4 +285,39 @@ func GetAppConfig(ctx context.Context, c client.Client, app *Application, env *t
 		return nil, err
 	}
 	return appConfig, nil
+}
+
+// Object generate v1alpha2.Application
+func (app *Application) Object(ns string) *v1alpha2.Application {
+	servApp := new(v1alpha2.Application)
+	servApp.SetNamespace(ns)
+	servApp.SetName(app.Name)
+
+	services := map[string]interface{}{}
+	for name, svc := range app.Services {
+		services[name] = map[string]interface{}(svc)
+	}
+
+	servApp.Spec.Object = &unstructured.Unstructured{Object: map[string]interface{}{
+		"services": services,
+	}}
+
+	servApp.SetGroupVersionKind(v1alpha2.SchemeGroupVersion.WithKind("Application"))
+
+	return servApp
+}
+
+// InitTasks init tasks and generate new application
+func (app *Application) InitTasks(io cmdutil.IOStreams) (*Application, error) {
+	appFile := *app.AppFile
+	newApp := Application{AppFile: &appFile, tm: app.tm}
+	newApp.Services = map[string]appfile.Service{}
+	for name, svc := range app.Services {
+		newSvc, err := builtin.DoTasks(svc, io)
+		if err != nil {
+			return nil, err
+		}
+		newApp.Services[name] = newSvc
+	}
+	return &newApp, nil
 }

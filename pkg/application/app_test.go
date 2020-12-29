@@ -8,8 +8,13 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/oam-dev/kubevela/apis/core.oam.dev/v1alpha2"
 	"github.com/oam-dev/kubevela/apis/types"
+	"github.com/oam-dev/kubevela/pkg/appfile"
 	"github.com/oam-dev/kubevela/pkg/appfile/template"
 )
 
@@ -151,4 +156,41 @@ func TestLoadNotExistsApplication(t *testing.T) {
 
 	errString := fmt.Sprintf(`application "%s" not found`, appName)
 	assert.EqualError(t, err, errString, caseName)
+}
+
+func TestObject(t *testing.T) {
+	app := &Application{
+		AppFile: &appfile.AppFile{
+			Name: "test",
+			Services: map[string]appfile.Service{
+				"webapp": map[string]interface{}{
+					"type":  "containerWorkload",
+					"image": "busybox",
+				},
+			},
+		},
+	}
+
+	expectNs := "test-ns"
+	expectApp := &v1alpha2.Application{
+		TypeMeta: v1.TypeMeta{
+			Kind:       "Application",
+			APIVersion: "core.oam.dev/v1alpha2",
+		}, ObjectMeta: v1.ObjectMeta{
+			Name: "test", Namespace: expectNs,
+		},
+		Spec: runtime.RawExtension{
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"services": map[string]interface{}{
+						"webapp": map[string]interface{}{
+							"type":  "containerWorkload",
+							"image": "busybox",
+						},
+					},
+				},
+			},
+		},
+	}
+	assert.Equal(t, expectApp, app.Object(expectNs))
 }
